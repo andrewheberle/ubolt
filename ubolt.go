@@ -159,7 +159,7 @@ func (db *DB) Delete(bucket, key []byte) error {
 	})
 }
 
-func (bdb *BDB) Delete(key, value []byte) error {
+func (bdb *BDB) Delete(key []byte) error {
 	return bdb.db.Delete(bdb.bucket, key)
 }
 
@@ -199,7 +199,7 @@ func (db *DB) GetKeysE(bucket []byte) (keys [][]byte, err error) {
 	return keys, nil
 }
 
-func (bdb *BDB) GetKeysE(key []byte) (keys [][]byte, err error) {
+func (bdb *BDB) GetKeysE() (keys [][]byte, err error) {
 	return bdb.db.GetKeysE(bdb.bucket)
 }
 
@@ -209,7 +209,7 @@ func (db *DB) GetKeys(bucket []byte) (keys [][]byte) {
 	return keys
 }
 
-func (bdb *BDB) GetKeys(key []byte) (keys [][]byte) {
+func (bdb *BDB) GetKeys() (keys [][]byte) {
 	return bdb.db.GetKeys(bdb.bucket)
 }
 
