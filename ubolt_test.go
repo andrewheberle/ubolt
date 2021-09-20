@@ -10,179 +10,159 @@ import (
 var (
 	testdb     = "test.db"
 	testbucket = []byte("bucket1")
-	onebucket  = [][]byte{[]byte("bucket1")}
-	twobuckets = [][]byte{[]byte("bucket1"), []byte("bucket2")}
 )
 
 func TestOpen(t *testing.T) {
 	_ = os.Remove(testdb)
 
-	// test no buckets
-	func() {
-		defer os.Remove(testdb)
-
-		db, err := Open(testdb, nil)
-		assert.Nil(t, err)
-		defer db.Close()
-	}()
-
-	// test one bucket
-	func() {
-		defer os.Remove(testdb)
-
-		db, err := Open(testdb, onebucket)
-		assert.Nil(t, err)
-		defer db.Close()
-	}()
-
-	// test two buckets
-	func() {
-		defer os.Remove(testdb)
-
-		db, err := Open(testdb, twobuckets)
-		assert.Nil(t, err)
-		defer db.Close()
-	}()
-}
-
-func TestPut(t *testing.T) {
 	defer os.Remove(testdb)
 
-	tests := []struct {
+	db, err := Open(testdb)
+	assert.Nil(t, err)
+	defer db.Close()
+}
+
+func TestDB(t *testing.T) {
+	tests := map[string][]struct {
 		name    string
-		bucket  []byte
-		key     []byte
+		buckets [][]byte
+		keys    [][]byte
 		value   []byte
 		wantErr bool
 	}{
-		{"simple put", testbucket, []byte("key1"), []byte("value"), false},
-		{"missing bucket", []byte("missing"), []byte("key1"), []byte("value"), true},
+		"Put": {
+			{"simple put key1", [][]byte{testbucket}, [][]byte{[]byte("key1")}, []byte("value1"), false},
+			{"simple put key2", [][]byte{testbucket}, [][]byte{[]byte("key2")}, []byte("value2"), false},
+			{"auto-increment key", [][]byte{testbucket}, nil, []byte("value2"), false},
+			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, []byte("value2"), true},
+		},
+		"PutV": {
+			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, []byte("value2"), true},
+		},
+		"Get": {
+			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
+			{"missing key", [][]byte{testbucket}, [][]byte{[]byte("missing")}, nil, true},
+			{"valid key", [][]byte{testbucket}, [][]byte{[]byte("key1")}, []byte("value1"), false},
+		},
+		"GetE": {
+			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
+			{"missing key", [][]byte{testbucket}, [][]byte{[]byte("missing")}, nil, true},
+			{"valid key", [][]byte{testbucket}, [][]byte{[]byte("key1")}, []byte("value1"), false},
+		},
+		"Delete": {
+			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
+			{"missing key", [][]byte{testbucket}, [][]byte{[]byte("missing")}, nil, false},
+			{"valid key", [][]byte{testbucket}, [][]byte{[]byte("key2")}, nil, false},
+		},
+		"GetKeys": {
+			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
+			{"valid bucket", [][]byte{testbucket}, [][]byte{itob(uint64(1)), []byte("key1")}, nil, false},
+		},
+		"GetBuckets": {
+			{"valid bucket", [][]byte{testbucket}, nil, nil, false},
+		},
+		"DeleteBucket": {
+			{"missing bucket", [][]byte{[]byte("missing")}, nil, nil, true},
+			{"valid bucket", [][]byte{testbucket}, nil, nil, false},
+		},
 	}
+
+	defer os.Remove(testdb)
 
 	// start with no database
 	_ = os.Remove(testdb)
 
 	// open db
-	db, err := Open(testdb, [][]byte{testbucket})
+	db, err := Open(testdb)
 	assert.Nil(t, err)
 	defer db.Close()
 
-	for _, tt := range tests {
-		err := db.Put(tt.bucket, tt.key, tt.value)
+	assert.Nil(t, db.CreateBucket(testbucket))
+
+	// run Put tests
+	for _, tt := range tests["Put"] {
+		var err error
+		if tt.keys == nil {
+			err = db.Put(tt.buckets[0], nil, tt.value)
+		} else {
+			err = db.Put(tt.buckets[0], tt.keys[0], tt.value)
+		}
 		if tt.wantErr {
-			assert.NotNil(t, err, tt.name)
+			assert.NotNil(t, err, "Put", tt.name)
+		} else {
+			assert.Nil(t, err, "Put", tt.name)
+		}
+	}
+
+	// run PutV tests
+	for _, tt := range tests["PutV"] {
+		_, err := db.PutV(tt.buckets[0], tt.value)
+		if tt.wantErr {
+			assert.NotNil(t, err, "PutV", tt.name)
+		} else {
+			assert.Nil(t, err, "PutV", tt.name)
+		}
+	}
+
+	// run Get tests
+	for _, tt := range tests["Get"] {
+		value := db.Get(tt.buckets[0], tt.keys[0])
+		if tt.wantErr {
+			assert.Nil(t, value, "Get", tt.name)
+		} else {
+			assert.Equal(t, tt.value, value, "Get", tt.name)
+		}
+	}
+
+	// run GetE tests
+	for _, tt := range tests["GetE"] {
+		value, err := db.GetE(tt.buckets[0], tt.keys[0])
+		if tt.wantErr {
+			assert.NotNil(t, err, "GetE", tt.name)
 		} else {
 			assert.Nil(t, err, tt.name)
+			assert.Equal(t, tt.value, value, "GetE", tt.name)
 		}
 	}
-}
 
-func TestGet(t *testing.T) {
-	defer os.Remove(testdb)
-
-	// start with no database
-	_ = os.Remove(testdb)
-
-	// open db
-	db, err := Open(testdb, [][]byte{testbucket})
-	assert.Nil(t, err)
-	defer db.Close()
-
-	// test no data
-	func() {
-		data := db.Get(testbucket, []byte("key"))
-		assert.Nil(t, data, "missing key or bucket")
-	}()
-
-	// add some data
-	func() {
-		err := db.Put(testbucket, []byte("key"), []byte("value"))
-		assert.Nil(t, err)
-	}()
-
-	// get data
-	func() {
-		value := db.Get(testbucket, []byte("key"))
-		assert.Equal(t, []byte("value"), value)
-	}()
-}
-
-func TestGetE(t *testing.T) {
-	defer os.Remove(testdb)
-
-	// start with no database
-	_ = os.Remove(testdb)
-
-	// open db
-	db, err := Open(testdb, [][]byte{testbucket})
-	assert.Nil(t, err)
-	defer db.Close()
-
-	// test missing bucket
-	func() {
-		data, err := db.GetE([]byte("missingbucket"), []byte("key"))
-		assert.Nil(t, data, "missing bucket")
-		assert.ErrorIs(t, err, ErrorBucketNotFound, "missing bucket")
-	}()
-
-	// test missing key
-	func() {
-		data, err := db.GetE(testbucket, []byte("key"))
-		assert.Nil(t, data, "missing key")
-		assert.ErrorIs(t, err, ErrorKeyNotFound, "missing key")
-	}()
-
-	// add some data
-	func() {
-		err := db.Put(testbucket, []byte("key"), []byte("value"))
-		assert.Nil(t, err)
-	}()
-
-	// get data
-	func() {
-		value, err := db.GetE(testbucket, []byte("key"))
-		assert.Equal(t, []byte("value"), value)
-		assert.Nil(t, err)
-	}()
-}
-
-func TestGetKeys(t *testing.T) {
-	defer os.Remove(testdb)
-
-	// start with no database
-	_ = os.Remove(testdb)
-
-	// open db
-	db, err := Open(testdb, [][]byte{testbucket})
-	assert.Nil(t, err)
-	defer db.Close()
-
-	// test no keys in bucket
-	func() {
-		keys := db.GetKeys(testbucket)
-		assert.Nil(t, keys, "empty bucket")
-	}()
-
-	// test with one keys
-	func() {
-		_ = db.Put(testbucket, []byte("key"), []byte("value"))
-		keys := db.GetKeys(testbucket)
-		assert.Equal(t, [][]byte{[]byte("key")}, keys, "has one key")
-	}()
-
-	// test with many keys
-	func() {
-		keylist := [][]byte{
-			[]byte("key"),
-			[]byte("key1"),
-			[]byte("key2"),
-			[]byte("key3"),
+	// run Delete tests
+	for _, tt := range tests["Delete"] {
+		err := db.Delete(tt.buckets[0], tt.keys[0])
+		if tt.wantErr {
+			assert.NotNil(t, err, "Delete", tt.name)
+		} else {
+			assert.Nil(t, err, "Delete", tt.name)
 		}
-		for _, k := range keylist {
-			_ = db.Put(testbucket, k, []byte("value"))
-		}
+	}
 
-		keys := db.GetKeys(testbucket)
-		assert.Equal(t, keylist, keys, "many keys")
-	}()
+	// run GetKeys tests
+	for _, tt := range tests["GetKeys"] {
+		keys := db.GetKeys(tt.buckets[0])
+		if tt.wantErr {
+			assert.Nil(t, keys, "GetKeys", tt.name)
+		} else {
+			assert.Equal(t, tt.keys, keys, "GetKeys", tt.name)
+		}
+	}
+
+	// run GetBuckets tests
+	for _, tt := range tests["GetBuckets"] {
+		buckets := db.GetBuckets()
+		if tt.wantErr {
+			assert.Nil(t, err, "GetBuckets", tt.name)
+		} else {
+			assert.Equal(t, tt.buckets, buckets, "GetBuckets", tt.name)
+		}
+	}
+
+	// run DeleteBucket tests
+	for _, tt := range tests["DeleteBucket"] {
+		err := db.DeleteBucket(tt.buckets[0])
+		if tt.wantErr {
+			assert.NotNil(t, err, "DeleteBucket", tt.name)
+		} else {
+			assert.Nil(t, err, "DeleteBucket", tt.name)
+		}
+	}
+
 }

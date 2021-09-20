@@ -25,22 +25,9 @@ var (
 
 // Open creates and opens a database at the given path. If the file does not exist it will be created automatically.
 // The database is opened with a file-mode of 0600 and a timeout of 5 seconds
-func Open(path string, buckets [][]byte) (*DB, error) {
+func Open(path string) (*DB, error) {
 	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := db.Update(func(tx *bolt.Tx) error {
-		for _, value := range buckets {
-			_, err := tx.CreateBucketIfNotExists(value)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
 		return nil, err
 	}
 
@@ -49,8 +36,12 @@ func Open(path string, buckets [][]byte) (*DB, error) {
 
 // OpenB performs the same process as Open however only one bucket is usable in subsequent calls to Put, Get etc
 func OpenB(path string, bucket []byte) (*BDB, error) {
-	db, err := Open(path, [][]byte{bucket})
+	db, err := Open(path)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := db.CreateBucket(bucket); err != nil {
 		return nil, err
 	}
 
