@@ -179,6 +179,15 @@ func (db *DB) DeleteBucket(bucket []byte) error {
 	})
 }
 
+// DeleteBucket removes the specified bucket. This also deletes all keys contained in the bucket and any nested buckets.
+func (db *DB) CreateBucket(bucket []byte) error {
+	return db.db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(bucket)
+
+		return err
+	})
+}
+
 func (db *DB) GetKeysE(bucket []byte) (keys [][]byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
