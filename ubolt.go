@@ -172,8 +172,8 @@ func (bdb *BDB) Delete(key, value []byte) error {
 	return bdb.db.Delete(bdb.bucket, key)
 }
 
-// DeleteBucket removes the specified bucket.
-func (db *DB) DeleteBucket(bucket, key []byte) error {
+// DeleteBucket removes the specified bucket. This also deletes all keys contained in the bucket and any nested buckets.
+func (db *DB) DeleteBucket(bucket []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		return tx.DeleteBucket(bucket)
 	})
