@@ -156,7 +156,7 @@ func (bdb *BDB) Get(key []byte) (value []byte) {
 	return bdb.db.Get(bdb.bucket, key)
 }
 
-// Put sets the specified key in the chosen bucket to the provided value. This process is wrapped in a read/write transaction.
+// Delete removes the specified key in the chosen bucket. This process is wrapped in a read/write transaction.
 func (db *DB) Delete(bucket, key []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
@@ -170,6 +170,13 @@ func (db *DB) Delete(bucket, key []byte) error {
 
 func (bdb *BDB) Delete(key, value []byte) error {
 	return bdb.db.Delete(bdb.bucket, key)
+}
+
+// DeleteBucket removes the specified bucket.
+func (db *DB) DeleteBucket(bucket, key []byte) error {
+	return db.db.Update(func(tx *bolt.Tx) error {
+		return tx.DeleteBucket(bucket)
+	})
 }
 
 func (db *DB) GetKeysE(bucket []byte) (keys [][]byte, err error) {
