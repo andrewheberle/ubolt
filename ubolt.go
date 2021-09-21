@@ -58,6 +58,23 @@ func (bdb *BDB) Close() error {
 	return bdb.db.Close()
 }
 
+// Ping tests the database by opening a bucket.
+func (db *DB) Ping(bucket []byte) error {
+	return db.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucket)
+		if b == nil {
+			return ErrorBucketNotFound
+		}
+
+		return nil
+	})
+}
+
+// Ping tests the database by opening a bucket.
+func (bdb *BDB) Ping() error {
+	return bdb.db.Ping(bdb.bucket)
+}
+
 // Put sets the specified key in the chosen bucket to the provided value. This process is wrapped in a read/write transaction.
 func (db *DB) Put(bucket, key, value []byte) error {
 	if key == nil {
