@@ -1,7 +1,9 @@
 package ubolt
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -160,6 +162,60 @@ func TestDB(t *testing.T) {
 		}
 	}
 
+	// run Scan tets
+	got := make([]string, 0)
+	scantests := []struct {
+		name    string
+		bucket  []byte
+		prefix  []byte
+		fn      func(k, v []byte) error
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "basic",
+			bucket: testbucket,
+			prefix: []byte("key"),
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "k=key1;v=value1",
+			wantErr: false,
+		},
+		{
+			name:   "missing bucket",
+			bucket: []byte("missing"),
+			prefix: []byte("key"),
+			fn: func(k, v []byte) error {
+				return nil
+			},
+			wantErr: true,
+		},
+		{
+			name:   "missing prefix",
+			bucket: testbucket,
+			prefix: []byte("missing"),
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range scantests {
+		got = make([]string, 0)
+		err := db.Scan(tt.bucket, tt.prefix, tt.fn)
+		if tt.wantErr {
+			assert.NotNil(t, err)
+		} else {
+			assert.Nil(t, err)
+			assert.Equal(t, tt.want, strings.Join(got, ":"), tt.name)
+		}
+	}
+
 	// run DeleteBucket tests
 	for _, tt := range tests["DeleteBucket"] {
 		err := db.DeleteBucket(tt.buckets[0])
@@ -210,7 +266,7 @@ func TestBDB(t *testing.T) {
 	_ = os.Remove(testdb)
 
 	// open db
-	db, err := OpenB(testdb, testbucket)
+	db, err := OpenBucket(testdb, testbucket)
 	assert.Nil(t, err)
 	defer db.Close()
 
@@ -288,6 +344,91 @@ func TestBDB(t *testing.T) {
 		} else {
 			assert.Nil(t, err, "GetKeysE", tt.name)
 			assert.Equal(t, tt.keys, keys, "GetKeysE", tt.name)
+		}
+	}
+
+	// run Scan tets
+	// add an extra keys first
+	_ = db.Put([]byte("keyz"), []byte("value2"))
+	_ = db.Put([]byte("keyzz"), []byte("value3"))
+	_ = db.Put([]byte("prefix1"), []byte("prefixvalue1"))
+	_ = db.Put([]byte("prefix2"), []byte("prefixvalue2"))
+	_ = db.Put([]byte("prefix3"), []byte("prefixvalue3"))
+	got := make([]string, 0)
+
+	scantests := []struct {
+		name    string
+		bucket  []byte
+		prefix  []byte
+		fn      func(k, v []byte) error
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "basic",
+			bucket: testbucket,
+			prefix: []byte("key"),
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "k=key1;v=value1:k=keyz;v=value2:k=keyzz;v=value3",
+			wantErr: false,
+		},
+		{
+			name:   "missing prefix",
+			bucket: testbucket,
+			prefix: []byte("missing"),
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range scantests {
+		got = make([]string, 0)
+		err := db.Scan(tt.prefix, tt.fn)
+		if tt.wantErr {
+			assert.NotNil(t, err)
+		} else {
+			assert.Nil(t, err)
+			assert.Equal(t, tt.want, strings.Join(got, ":"), tt.name)
+		}
+	}
+
+	// run ForEach tests
+	// delete a key we don't want first
+	_ = db.Delete(itob(1))
+	foreachtests := []struct {
+		name    string
+		bucket  []byte
+		fn      func(k, v []byte) error
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "basic",
+			bucket: testbucket,
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "k=key1;v=value1:k=keyz;v=value2:k=keyzz;v=value3:k=prefix1;v=prefixvalue1:k=prefix2;v=prefixvalue2:k=prefix3;v=prefixvalue3",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range foreachtests {
+		got = make([]string, 0)
+		err := db.ForEach(tt.fn)
+		if tt.wantErr {
+			assert.NotNil(t, err)
+		} else {
+			assert.Nil(t, err)
+			assert.Equal(t, tt.want, strings.Join(got, ":"), tt.name)
 		}
 	}
 }

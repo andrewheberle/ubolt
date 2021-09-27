@@ -1,6 +1,7 @@
 package ubolt
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -34,8 +35,8 @@ func Open(path string) (*DB, error) {
 	return &DB{db}, nil
 }
 
-// OpenB performs the same process as Open however only one bucket is usable in subsequent calls to Put, Get etc
-func OpenB(path string, bucket []byte) (*BDB, error) {
+// OpenBucket performs the same process as Open however only one bucket is usable in subsequent calls to Put, Get etc
+func OpenBucket(path string, bucket []byte) (*BDB, error) {
 	db, err := Open(path)
 	if err != nil {
 		return nil, err
@@ -241,6 +242,46 @@ func (db *DB) GetBuckets() (buckets [][]byte) {
 	buckets, _ = db.GetBucketsE()
 
 	return buckets
+}
+
+func (db *DB) ForEach(bucket []byte, fn func(k, v []byte) error) error {
+	return db.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucket)
+
+		if b == nil {
+			return ErrorBucketNotFound
+		}
+
+		return b.ForEach(fn)
+	})
+}
+
+func (bdb *BDB) ForEach(fn func(k, v []byte) error) error {
+	return bdb.db.ForEach(bdb.bucket, fn)
+}
+
+func (db *DB) Scan(bucket, prefix []byte, fn func(k, v []byte) error) error {
+	return db.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucket)
+
+		if b == nil {
+			return ErrorBucketNotFound
+		}
+
+		c := b.Cursor()
+
+		for key, val := c.Seek(prefix); key != nil && bytes.HasPrefix(key, prefix); key, val = c.Next() {
+			if err := fn(key, val); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func (bdb *BDB) Scan(prefix []byte, fn func(k, v []byte) error) error {
+	return bdb.db.Scan(bdb.bucket, prefix, fn)
 }
 
 func (db *DB) WriteTo(w io.Writer) (n int64, err error) {
