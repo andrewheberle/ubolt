@@ -160,19 +160,28 @@ func (bdb *BDB) Get(key []byte) (value []byte) {
 	return bdb.db.Get(bdb.bucket, key)
 }
 
-func (db *DB) Encode(bucket, key []byte, val interface{}) error {
+// Encode encodes the provided value using "encoding/gob" then writes the resulting byte slice to the provided key
+func (db *DB) Encode(bucket, key []byte, value interface{}) error {
 	var buf bytes.Buffer
 
 	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(val); err != nil {
+	if err := enc.Encode(value); err != nil {
 		return err
 	}
 
 	return db.Put(bucket, key, buf.Bytes())
 }
 
-func (db *DB) Decode(bucket, key []byte, val interface{}) error {
-	return nil
+func (db *DB) Decode(bucket, key []byte, value interface{}) error {
+	data, err := db.GetE(bucket, key)
+	if err != nil {
+		return err
+	}
+
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+
+	return dec.Decode(value)
 }
 
 // Delete removes the specified key in the chosen bucket. This process is wrapped in a read/write transaction.

@@ -216,6 +216,86 @@ func TestDB(t *testing.T) {
 		}
 	}
 
+	// run Encode/Decode tests
+	type enctest struct {
+		Name   string
+		Number int
+	}
+	encodetests := []struct {
+		name    string
+		bucket  []byte
+		key     []byte
+		value   interface{}
+		wantErr bool
+	}{
+		{"string", testbucket, []byte("string"), "string", false},
+		{"int", testbucket, []byte("int"), 100, false},
+		{"struct", testbucket, []byte("struct"), enctest{"name", 100}, false},
+	}
+
+	for _, tt := range encodetests {
+		var err error
+
+		switch tt.value.(type) {
+		case string:
+			// start with non-zero value
+			var got = string("somevalue")
+
+			err = db.Encode(tt.bucket, tt.key, tt.value.(string))
+			if tt.wantErr {
+				assert.NotNil(t, err, tt.name)
+			} else {
+				assert.Nil(t, err, tt.name)
+				err = db.Decode(tt.bucket, tt.key, &got)
+				if tt.wantErr {
+					assert.NotNil(t, err, tt.name)
+				} else {
+					assert.Nil(t, err, tt.name)
+					assert.Equal(t, tt.value.(string), got, tt.name)
+				}
+			}
+		case int:
+			// start with non-zero value
+			var got = int(1000)
+
+			err = db.Encode(tt.bucket, tt.key, tt.value.(int))
+			if tt.wantErr {
+				assert.NotNil(t, err, tt.name)
+			} else {
+				assert.Nil(t, err, tt.name)
+				err = db.Decode(tt.bucket, tt.key, &got)
+				if tt.wantErr {
+					assert.NotNil(t, err, tt.name)
+				} else {
+					assert.Nil(t, err, tt.name)
+					assert.Equal(t, tt.value.(int), got, tt.name)
+				}
+			}
+		case enctest:
+			// start with non-zero value
+			var got = enctest{"somename", 100}
+
+			err = db.Encode(tt.bucket, tt.key, tt.value.(enctest))
+			if tt.wantErr {
+				assert.NotNil(t, err, tt.name)
+			} else {
+				assert.Nil(t, err, tt.name)
+				err = db.Decode(tt.bucket, tt.key, &got)
+				if tt.wantErr {
+					assert.NotNil(t, err, tt.name)
+				} else {
+					assert.Nil(t, err, tt.name)
+					assert.Equal(t, tt.value.(enctest), got, tt.name)
+				}
+			}
+		}
+		if tt.wantErr {
+			assert.NotNil(t, err, "DeleteBucket", tt.name)
+		} else {
+			assert.Nil(t, err, "DeleteBucket", tt.name)
+		}
+	}
+
 	// run DeleteBucket tests
 	for _, tt := range tests["DeleteBucket"] {
 		err := db.DeleteBucket(tt.buckets[0])
