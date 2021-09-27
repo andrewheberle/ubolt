@@ -3,6 +3,7 @@ package ubolt
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"time"
@@ -157,6 +158,21 @@ func (db *DB) Get(bucket, key []byte) (value []byte) {
 
 func (bdb *BDB) Get(key []byte) (value []byte) {
 	return bdb.db.Get(bdb.bucket, key)
+}
+
+func (db *DB) Encode(bucket, key []byte, val interface{}) error {
+	var buf bytes.Buffer
+
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(val); err != nil {
+		return err
+	}
+
+	return db.Put(bucket, key, buf.Bytes())
+}
+
+func (db *DB) Decode(bucket, key []byte, val interface{}) error {
+	return nil
 }
 
 // Delete removes the specified key in the chosen bucket. This process is wrapped in a read/write transaction.
