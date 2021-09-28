@@ -20,10 +20,24 @@ type BDB struct {
 	bucket []byte
 }
 
-var (
-	ErrorBucketNotFound = fmt.Errorf("bucket not found")
-	ErrorKeyNotFound    = fmt.Errorf("key not found")
-)
+// ErrBucketNotFound is returned when the bucket requested was not found
+type ErrBucketNotFound struct {
+	bucket []byte
+}
+
+func (bnf ErrBucketNotFound) Error() string {
+	return fmt.Sprintf("Bucket %s not found", string(bnf.bucket))
+}
+
+// ErrKeyNotFound is returned when the key requested was not found
+type ErrKeyNotFound struct {
+	bucket []byte
+	key    []byte
+}
+
+func (knf ErrKeyNotFound) Error() string {
+	return fmt.Sprintf("Key %s not found in bucket %s", string(knf.key), string(knf.bucket))
+}
 
 // Open creates and opens a database at the given path. If the file does not exist it will be created automatically.
 // The database is opened with a file-mode of 0600 and a timeout of 5 seconds
@@ -82,7 +96,7 @@ func (db *DB) Put(bucket, key, value []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		return b.Put(key, value)
@@ -98,7 +112,7 @@ func (db *DB) PutV(bucket, value []byte) (key []byte, err error) {
 	err = db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		// generate key
@@ -128,12 +142,12 @@ func (db *DB) GetE(bucket, key []byte) (value []byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		data := b.Get(key)
 		if data == nil {
-			return ErrorKeyNotFound
+			return ErrKeyNotFound{bucket: bucket, key: key}
 		}
 
 		value = append(value, data...)
@@ -197,7 +211,7 @@ func (db *DB) Delete(bucket, key []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		return b.Delete(key)
@@ -228,7 +242,7 @@ func (db *DB) GetKeysE(bucket []byte) (keys [][]byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		c := b.Cursor()
@@ -282,7 +296,7 @@ func (db *DB) ForEach(bucket []byte, fn func(k, v []byte) error) error {
 		b := tx.Bucket(bucket)
 
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		return b.ForEach(fn)
@@ -298,7 +312,7 @@ func (db *DB) Scan(bucket, prefix []byte, fn func(k, v []byte) error) error {
 		b := tx.Bucket(bucket)
 
 		if b == nil {
-			return ErrorBucketNotFound
+			return ErrBucketNotFound{bucket}
 		}
 
 		c := b.Cursor()
