@@ -1,3 +1,7 @@
+// Package ubolt wraps various calls from "go.etcd.io/bbolt" to make basic use simpler and quicker.
+//
+// Various calls such as Get, Put etc are automatically wrapped in transcations to ensure consistency.
+//
 package ubolt
 
 import (
