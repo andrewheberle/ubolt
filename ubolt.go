@@ -29,6 +29,12 @@ func (bnf ErrBucketNotFound) Error() string {
 	return fmt.Sprintf("Bucket %s not found", string(bnf.bucket))
 }
 
+func (bnf ErrBucketNotFound) Is(target error) bool {
+	_, is := target.(ErrBucketNotFound)
+
+	return is
+}
+
 // ErrKeyNotFound is returned when the key requested was not found
 type ErrKeyNotFound struct {
 	bucket []byte
@@ -37,6 +43,12 @@ type ErrKeyNotFound struct {
 
 func (knf ErrKeyNotFound) Error() string {
 	return fmt.Sprintf("Key %s not found in bucket %s", string(knf.key), string(knf.bucket))
+}
+
+func (knf ErrKeyNotFound) Is(target error) bool {
+	_, is := target.(ErrKeyNotFound)
+
+	return is
 }
 
 // Open creates and opens a database at the given path. If the file does not exist it will be created automatically.
