@@ -172,6 +172,10 @@ func (db *DB) Encode(bucket, key []byte, value interface{}) error {
 	return db.Put(bucket, key, buf.Bytes())
 }
 
+func (bdb *BDB) Encode(key []byte, value interface{}) error {
+	return bdb.db.Encode(bdb.bucket, key, value)
+}
+
 func (db *DB) Decode(bucket, key []byte, value interface{}) error {
 	data, err := db.GetE(bucket, key)
 	if err != nil {
@@ -182,6 +186,10 @@ func (db *DB) Decode(bucket, key []byte, value interface{}) error {
 	dec := gob.NewDecoder(buf)
 
 	return dec.Decode(value)
+}
+
+func (bdb *BDB) Decode(key []byte, value interface{}) error {
+	return bdb.db.Decode(bdb.bucket, key, value)
 }
 
 // Delete removes the specified key in the chosen bucket. This process is wrapped in a read/write transaction.
