@@ -1,6 +1,6 @@
 // Package ubolt wraps various calls from "go.etcd.io/bbolt" to make basic use simpler and quicker.
 //
-// Various calls such as Get, Put etc are automatically wrapped in transcations to ensure consistency.
+// Various calls such as Get, Put etc are automatically wrapped in transactions to ensure consistency.
 //
 package ubolt
 
@@ -24,15 +24,17 @@ type BDB struct {
 	bucket []byte
 }
 
-// ErrBucketNotFound is returned when the bucket requested was not found
+// ErrBucketNotFound is returned when the bucket requested was not found.
 type ErrBucketNotFound struct {
 	bucket []byte
 }
 
+// Error returns the formatted configuration error.
 func (bnf ErrBucketNotFound) Error() string {
 	return fmt.Sprintf("Bucket %s not found", string(bnf.bucket))
 }
 
+// Is allows testing using errors.Is
 func (bnf ErrBucketNotFound) Is(target error) bool {
 	_, is := target.(ErrBucketNotFound)
 
@@ -45,10 +47,12 @@ type ErrKeyNotFound struct {
 	key    []byte
 }
 
+// Error returns the formatted configuration error.
 func (knf ErrKeyNotFound) Error() string {
 	return fmt.Sprintf("Key %s not found in bucket %s", string(knf.key), string(knf.bucket))
 }
 
+// Is allows testing using errors.Is
 func (knf ErrKeyNotFound) Is(target error) bool {
 	_, is := target.(ErrKeyNotFound)
 
@@ -119,11 +123,12 @@ func (db *DB) Put(bucket, key, value []byte) error {
 	})
 }
 
+// Put sets the specified key in the bucket opened to the provided value. This process is wrapped in a read/write transaction.
 func (bdb *BDB) Put(key, value []byte) error {
 	return bdb.db.Put(bdb.bucket, key, value)
 }
 
-// PutV sets a key based on an auto-incrementing value for the key
+// PutV sets a key based on an auto-incrementing value for the key.
 func (db *DB) PutV(bucket, value []byte) (key []byte, err error) {
 	err = db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
@@ -150,10 +155,12 @@ func (db *DB) PutV(bucket, value []byte) (key []byte, err error) {
 	return key, nil
 }
 
+// PutV sets a key based on an auto-incrementing value for the key.
 func (bdb *BDB) PutV(value []byte) (key []byte, err error) {
 	return bdb.db.PutV(bdb.bucket, value)
 }
 
+// GetE retrieves the specified key from the chosen bucket and returns the value and an error. The returned error is non-nil if a failure occurred, which includes if the bucket or key was not found.
 func (db *DB) GetE(bucket, key []byte) (value []byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
@@ -176,16 +183,19 @@ func (db *DB) GetE(bucket, key []byte) (value []byte, err error) {
 	return value, nil
 }
 
+// GetE retrieves the specified key and returns the value and an error. The returned error is non-nil if a failure occurred, which includes if the key was not found.
 func (bdb *BDB) GetE(key []byte) (value []byte, err error) {
 	return bdb.db.GetE(bdb.bucket, key)
 }
 
+// Get retrieves the specified key from the chosen bucket and returns the value. The value returned may be nil which indicates the bucket or key was not found.
 func (db *DB) Get(bucket, key []byte) (value []byte) {
 	value, _ = db.GetE(bucket, key)
 
 	return value
 }
 
+// Get retrieves the specified key and returns the value. The value returned may be nil which indicates the key was not found.
 func (bdb *BDB) Get(key []byte) (value []byte) {
 	return bdb.db.Get(bdb.bucket, key)
 }
@@ -202,10 +212,12 @@ func (db *DB) Encode(bucket, key []byte, value interface{}) error {
 	return db.Put(bucket, key, buf.Bytes())
 }
 
+// Encode encodes the provided value using "encoding/gob" then writes the resulting byte slice to the provided key
 func (bdb *BDB) Encode(key []byte, value interface{}) error {
 	return bdb.db.Encode(bdb.bucket, key, value)
 }
 
+// Decode retrieves and decodes a value set by Encode into the provided pointer value.
 func (db *DB) Decode(bucket, key []byte, value interface{}) error {
 	data, err := db.GetE(bucket, key)
 	if err != nil {
@@ -218,6 +230,7 @@ func (db *DB) Decode(bucket, key []byte, value interface{}) error {
 	return dec.Decode(value)
 }
 
+// Decode retrieves and decodes a value set by Encode into the provided pointer value.
 func (bdb *BDB) Decode(key []byte, value interface{}) error {
 	return bdb.db.Decode(bdb.bucket, key, value)
 }
@@ -234,6 +247,7 @@ func (db *DB) Delete(bucket, key []byte) error {
 	})
 }
 
+// Delete removes the specified key. This process is wrapped in a read/write transaction.
 func (bdb *BDB) Delete(key []byte) error {
 	return bdb.db.Delete(bdb.bucket, key)
 }
