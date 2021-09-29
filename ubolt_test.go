@@ -20,6 +20,11 @@ var (
 	missing    = []byte("missing")
 )
 
+type enctest struct {
+	Name   string
+	Number int
+}
+
 type UboltDBTestSuite struct {
 	suite.Suite
 	db     *DB
@@ -420,10 +425,6 @@ func (s *UboltDBTestSuite) TestScan() {
 
 func (s *UboltDBTestSuite) TestEncode() {
 	// run Encode/Decode tests
-	type enctest struct {
-		Name   string
-		Number int
-	}
 	encodetests := []struct {
 		name    string
 		bucket  []byte
@@ -441,80 +442,11 @@ func (s *UboltDBTestSuite) TestEncode() {
 
 		switch tt.value.(type) {
 		case string:
-			// start with non-zero value
-			var got = string("somevalue")
-
-			if s.Bucket {
-				err = s.bdb.Encode(tt.key, tt.value.(string))
-			} else {
-				err = s.db.Encode(tt.bucket, tt.key, tt.value.(string))
-			}
-			if tt.wantErr {
-				assert.NotNil(s.T(), err, tt.name)
-			} else {
-				assert.Nil(s.T(), err, tt.name)
-				if s.Bucket {
-					err = s.bdb.Decode(tt.key, &got)
-				} else {
-					err = s.db.Decode(tt.bucket, tt.key, &got)
-				}
-				if tt.wantErr {
-					assert.NotNil(s.T(), err, tt.name)
-				} else {
-					assert.Nil(s.T(), err, tt.name)
-					assert.Equal(s.T(), tt.value.(string), got, tt.name)
-				}
-			}
+			s.stringencode(tt.name, tt.bucket, tt.key, tt.value.(string), tt.wantErr)
 		case int:
-			// start with non-zero value
-			var got = int(1000)
-
-			if s.Bucket {
-				err = s.bdb.Encode(tt.key, tt.value.(int))
-			} else {
-				err = s.db.Encode(tt.bucket, tt.key, tt.value.(int))
-			}
-			if tt.wantErr {
-				assert.NotNil(s.T(), err, tt.name)
-			} else {
-				assert.Nil(s.T(), err, tt.name)
-				if s.Bucket {
-					err = s.bdb.Decode(tt.key, &got)
-				} else {
-					err = s.db.Decode(tt.bucket, tt.key, &got)
-				}
-				if tt.wantErr {
-					assert.NotNil(s.T(), err, tt.name)
-				} else {
-					assert.Nil(s.T(), err, tt.name)
-					assert.Equal(s.T(), tt.value.(int), got, tt.name)
-				}
-			}
+			s.intencode(tt.name, tt.bucket, tt.key, tt.value.(int), tt.wantErr)
 		case enctest:
-			// start with non-zero value
-			var got = enctest{"somename", 100}
-
-			if s.Bucket {
-				err = s.bdb.Encode(tt.key, tt.value.(enctest))
-			} else {
-				err = s.db.Encode(tt.bucket, tt.key, tt.value.(enctest))
-			}
-			if tt.wantErr {
-				assert.NotNil(s.T(), err, tt.name)
-			} else {
-				assert.Nil(s.T(), err, tt.name)
-				if s.Bucket {
-					err = s.bdb.Decode(tt.key, &got)
-				} else {
-					err = s.db.Decode(tt.bucket, tt.key, &got)
-				}
-				if tt.wantErr {
-					assert.NotNil(s.T(), err, tt.name)
-				} else {
-					assert.Nil(s.T(), err, tt.name)
-					assert.Equal(s.T(), tt.value.(enctest), got, tt.name)
-				}
-			}
+			s.structencode(tt.name, tt.bucket, tt.key, tt.value.(enctest), tt.wantErr)
 		}
 		if tt.wantErr {
 			assert.NotNil(s.T(), err, "Encode", tt.name)
@@ -593,4 +525,85 @@ func (s *UboltDBTestSuite) TearDownTest() {
 func TestUboltDBTestSuite(t *testing.T) {
 	suite.Run(t, new(UboltDBTestSuite))
 	suite.Run(t, &UboltDBTestSuite{Bucket: true})
+}
+
+func (s *UboltDBTestSuite) stringencode(name string, bucket []byte, key []byte, value string, wantErr bool) {
+	var err error
+	var got = string("somevalue")
+
+	if s.Bucket {
+		err = s.bdb.Encode(key, value)
+	} else {
+		err = s.db.Encode(bucket, key, value)
+	}
+	if wantErr {
+		assert.NotNil(s.T(), err, name)
+	} else {
+		assert.Nil(s.T(), err, name)
+		if s.Bucket {
+			err = s.bdb.Decode(key, &got)
+		} else {
+			err = s.db.Decode(bucket, key, &got)
+		}
+		if wantErr {
+			assert.NotNil(s.T(), err, name)
+		} else {
+			assert.Nil(s.T(), err, name)
+			assert.Equal(s.T(), value, got, name)
+		}
+	}
+}
+
+func (s *UboltDBTestSuite) intencode(name string, bucket []byte, key []byte, value int, wantErr bool) {
+	var err error
+	var got = int(1000)
+
+	if s.Bucket {
+		err = s.bdb.Encode(key, value)
+	} else {
+		err = s.db.Encode(bucket, key, value)
+	}
+	if wantErr {
+		assert.NotNil(s.T(), err, name)
+	} else {
+		assert.Nil(s.T(), err, name)
+		if s.Bucket {
+			err = s.bdb.Decode(key, &got)
+		} else {
+			err = s.db.Decode(bucket, key, &got)
+		}
+		if wantErr {
+			assert.NotNil(s.T(), err, name)
+		} else {
+			assert.Nil(s.T(), err, name)
+			assert.Equal(s.T(), value, got, name)
+		}
+	}
+}
+
+func (s *UboltDBTestSuite) structencode(name string, bucket []byte, key []byte, value enctest, wantErr bool) {
+	var err error
+	var got = enctest{"somename", 100}
+
+	if s.Bucket {
+		err = s.bdb.Encode(key, value)
+	} else {
+		err = s.db.Encode(bucket, key, value)
+	}
+	if wantErr {
+		assert.NotNil(s.T(), err, name)
+	} else {
+		assert.Nil(s.T(), err, name)
+		if s.Bucket {
+			err = s.bdb.Decode(key, &got)
+		} else {
+			err = s.db.Decode(bucket, key, &got)
+		}
+		if wantErr {
+			assert.NotNil(s.T(), err, name)
+		} else {
+			assert.Nil(s.T(), err, name)
+			assert.Equal(s.T(), value, got, name)
+		}
+	}
 }
