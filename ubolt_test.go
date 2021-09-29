@@ -66,6 +66,23 @@ func (s *UboltDBTestSuite) SetupTest() {
 	}
 }
 
+func (s *UboltDBTestSuite) TestErrors() {
+	var err error
+
+	// skip test if this is a bucket only test
+	if s.Bucket {
+		return
+	}
+
+	// test error response for missing bucket
+	_, err = s.db.GetE(missing, testkey)
+	assert.ErrorIs(s.T(), err, ErrBucketNotFound{})
+
+	// test error response for missing key
+	_, err = s.db.GetE(testbucket, missing)
+	assert.ErrorIs(s.T(), err, ErrKeyNotFound{})
+}
+
 func (s *UboltDBTestSuite) TestPut() {
 	tests := []struct {
 		name    string
@@ -412,6 +429,75 @@ func (s *UboltDBTestSuite) TestScan() {
 			err = s.bdb.Scan(tt.prefix, tt.fn)
 		} else {
 			err = s.db.Scan(tt.bucket, tt.prefix, tt.fn)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err)
+		} else {
+			assert.Nil(s.T(), err)
+			assert.Equal(s.T(), tt.want, strings.Join(got, ":"), tt.name)
+		}
+	}
+}
+
+func (s *UboltDBTestSuite) TestForEach() {
+	var got []string
+
+	foreachtests := []struct {
+		name    string
+		bucket  []byte
+		fn      func(k, v []byte) error
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "ForEach - basic",
+			bucket: testbucket,
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "k=key1;v=value1:k=key2;v=value2",
+			wantErr: false,
+		},
+		{
+			name:   "ForEach - missing bucket",
+			bucket: missing,
+			fn: func(k, v []byte) error {
+				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
+				return nil
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+
+	// put additional value for test
+	if s.Bucket {
+		if err := s.bdb.Put([]byte("key2"), []byte("value2")); err != nil {
+			panic(err)
+		}
+	} else {
+		if err := s.db.Put(testbucket, []byte("key2"), []byte("value2")); err != nil {
+			panic(err)
+		}
+	}
+
+	for _, tt := range foreachtests {
+		var err error
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
+		}
+
+		got = make([]string, 0)
+
+		// run test
+		if s.Bucket {
+			err = s.bdb.ForEach(tt.fn)
+		} else {
+			err = s.db.ForEach(tt.bucket, tt.fn)
 		}
 
 		if tt.wantErr {
