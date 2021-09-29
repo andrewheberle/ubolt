@@ -1,167 +1,355 @@
 package ubolt
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 )
 
 var (
 	testdb     = "test.db"
+	testbackup = "test.bak"
 	testbucket = []byte("bucket1")
+	testkey    = []byte("key1")
+	testvalue  = []byte("value1")
+	missing    = []byte("missing")
 )
 
-func TestDB(t *testing.T) {
-	tests := map[string][]struct {
-		name    string
-		buckets [][]byte
-		keys    [][]byte
-		value   []byte
-		wantErr bool
-	}{
-		"Put": {
-			{"simple put key1", [][]byte{testbucket}, [][]byte{[]byte("key1")}, []byte("value1"), false},
-			{"simple put key2", [][]byte{testbucket}, [][]byte{[]byte("key2")}, []byte("value2"), false},
-			{"auto-increment key", [][]byte{testbucket}, nil, []byte("value2"), false},
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, []byte("value2"), true},
-		},
-		"PutV": {
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, []byte("value2"), true},
-		},
-		"Get": {
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
-			{"missing key", [][]byte{testbucket}, [][]byte{[]byte("missing")}, nil, true},
-			{"valid key", [][]byte{testbucket}, [][]byte{[]byte("key1")}, []byte("value1"), false},
-		},
-		"GetE": {
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
-			{"missing key", [][]byte{testbucket}, [][]byte{[]byte("missing")}, nil, true},
-			{"valid key", [][]byte{testbucket}, [][]byte{[]byte("key1")}, []byte("value1"), false},
-		},
-		"Delete": {
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
-			{"missing key", [][]byte{testbucket}, [][]byte{[]byte("missing")}, nil, false},
-			{"valid key", [][]byte{testbucket}, [][]byte{[]byte("key2")}, nil, false},
-		},
-		"GetKeys": {
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
-			{"valid bucket", [][]byte{testbucket}, [][]byte{itob(uint64(1)), []byte("key1")}, nil, false},
-		},
-		"GetKeysE": {
-			{"missing bucket", [][]byte{[]byte("missing")}, [][]byte{[]byte("key2")}, nil, true},
-			{"valid bucket", [][]byte{testbucket}, [][]byte{itob(uint64(1)), []byte("key1")}, nil, false},
-		},
-		"GetBuckets": {
-			{"valid bucket", [][]byte{testbucket}, nil, nil, false},
-		},
-		"DeleteBucket": {
-			{"missing bucket", [][]byte{[]byte("missing")}, nil, nil, true},
-			{"valid bucket", [][]byte{testbucket}, nil, nil, false},
-		},
-	}
+type UboltDBTestSuite struct {
+	suite.Suite
+	db     *DB
+	bdb    *BDB
+	Bucket bool
+}
 
-	defer os.Remove(testdb)
-
+func (s *UboltDBTestSuite) SetupTest() {
 	// start with no database
 	_ = os.Remove(testdb)
 
-	// open db
-	db, err := Open(testdb)
-	assert.Nil(t, err)
-	defer db.Close()
+	if s.Bucket {
+		// set up db
+		db, err := OpenBucket(testdb, testbucket)
+		if err != nil {
+			panic(err)
+		}
 
-	assert.Nil(t, db.CreateBucket(testbucket))
+		if err := db.Put(testkey, testvalue); err != nil {
+			panic(err)
+		}
 
-	// run Put tests
-	for _, tt := range tests["Put"] {
+		s.bdb = db
+	} else {
+		// set up db
+		db, err := Open(testdb)
+		if err != nil {
+			panic(err)
+		}
+		if err := db.CreateBucket(testbucket); err != nil {
+			panic(err)
+		}
+
+		if err := db.Put(testbucket, testkey, testvalue); err != nil {
+			panic(err)
+		}
+
+		s.db = db
+	}
+}
+
+func (s *UboltDBTestSuite) TestPut() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		key     []byte
+		value   []byte
+		wantErr bool
+	}{
+		{"Put - missing bucket (no key)", missing, nil, nil, true},
+		{"Put - missing bucket", missing, testkey, nil, true},
+		{"Put - valid bucket", testbucket, testkey, testvalue, false},
+	}
+
+	for _, tt := range tests {
 		var err error
-		if tt.keys == nil {
-			err = db.Put(tt.buckets[0], nil, tt.value)
-		} else {
-			err = db.Put(tt.buckets[0], tt.keys[0], tt.value)
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
 		}
-		if tt.wantErr {
-			assert.NotNil(t, err, "Put", tt.name)
+
+		if s.Bucket {
+			err = s.bdb.Put(tt.key, tt.value)
 		} else {
-			assert.Nil(t, err, "Put", tt.name)
+			err = s.db.Put(tt.bucket, tt.key, tt.key)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err, tt.name)
+		} else {
+			assert.Nil(s.T(), err, tt.name)
+		}
+	}
+}
+
+func (s *UboltDBTestSuite) TestPutV() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		key     []byte
+		value   []byte
+		wantErr bool
+	}{
+		{"PutV - missing bucket", missing, nil, nil, true},
+		{"PutV - valid bucket - 1", testbucket, itob(1), testvalue, false},
+		{"PutV - valid bucket - 2", testbucket, itob(2), testvalue, false},
+	}
+
+	for _, tt := range tests {
+		var key []byte
+		var err error
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
+		}
+
+		if s.Bucket {
+			key, err = s.bdb.PutV(tt.value)
+		} else {
+			key, err = s.db.PutV(tt.bucket, tt.key)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err, tt.name)
+		} else {
+			assert.Nil(s.T(), err, tt.name)
+			assert.Equal(s.T(), tt.key, key, tt.name)
+		}
+	}
+}
+
+func (s *UboltDBTestSuite) TestGet() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		key     []byte
+		value   []byte
+		wantErr bool
+	}{
+		{"Get - missing bucket", missing, []byte("key2"), nil, true},
+		{"Get - missing key", testbucket, missing, nil, true},
+		{"Get - valid key", testbucket, testkey, testvalue, false},
+	}
+
+	for _, tt := range tests {
+		var got []byte
+
+		if s.Bucket {
+			got = s.bdb.Get(tt.key)
+		} else {
+			got = s.db.Get(tt.bucket, tt.key)
+		}
+
+		if tt.wantErr {
+			assert.Nil(s.T(), got, tt.name)
+		} else {
+			assert.NotNil(s.T(), got, tt.name)
+			assert.Equal(s.T(), tt.value, got, tt.name)
+		}
+	}
+}
+
+func (s *UboltDBTestSuite) TestGetE() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		key     []byte
+		value   []byte
+		wantErr bool
+	}{
+		{"GetE - missing bucket", missing, []byte("key2"), nil, true},
+		{"GetE - missing key", testbucket, missing, nil, true},
+		{"GetE - valid key", testbucket, testkey, testvalue, false},
+	}
+
+	for _, tt := range tests {
+		var got []byte
+		var err error
+
+		if s.Bucket {
+			got, err = s.bdb.GetE(tt.key)
+		} else {
+			got, err = s.db.GetE(tt.bucket, tt.key)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err, tt.name)
+		} else {
+			assert.Nil(s.T(), err, tt.name)
+			assert.Equal(s.T(), tt.value, got, tt.name)
 		}
 	}
 
-	// run PutV tests
-	for _, tt := range tests["PutV"] {
-		_, err := db.PutV(tt.buckets[0], tt.value)
-		if tt.wantErr {
-			assert.NotNil(t, err, "PutV", tt.name)
+}
+
+func (s *UboltDBTestSuite) TestGetKeys() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		keys    [][]byte
+		wantErr bool
+	}{
+		{"GetKeys - missing bucket", missing, [][]byte{[]byte("key2")}, true},
+		{"GetKeys - valid bucket", testbucket, [][]byte{testkey}, false},
+	}
+
+	// run tests
+	for _, tt := range tests {
+		var keys [][]byte
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
+		}
+
+		if s.Bucket {
+			keys = s.bdb.GetKeys()
 		} else {
-			assert.Nil(t, err, "PutV", tt.name)
+			keys = s.db.GetKeys(tt.bucket)
+		}
+
+		if tt.wantErr {
+			assert.Nil(s.T(), keys, tt.name)
+		} else {
+			assert.Equal(s.T(), tt.keys, keys, tt.name)
 		}
 	}
 
-	// run Get tests
-	for _, tt := range tests["Get"] {
-		value := db.Get(tt.buckets[0], tt.keys[0])
-		if tt.wantErr {
-			assert.Nil(t, value, "Get", tt.name)
+}
+
+func (s *UboltDBTestSuite) TestGetKeysE() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		keys    [][]byte
+		wantErr bool
+	}{
+		{"GetKeysE - missing bucket", missing, [][]byte{[]byte("key2")}, true},
+		{"GetKeysE - valid bucket", testbucket, [][]byte{testkey}, false},
+	}
+
+	// run tests
+	for _, tt := range tests {
+		var keys [][]byte
+		var err error
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
+		}
+
+		if s.Bucket {
+			keys, err = s.bdb.GetKeysE()
 		} else {
-			assert.Equal(t, tt.value, value, "Get", tt.name)
+			keys, err = s.db.GetKeysE(tt.bucket)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err, tt.name)
+		} else {
+			assert.Nil(s.T(), err, tt.name)
+			assert.Equal(s.T(), tt.keys, keys, tt.name)
 		}
 	}
 
-	// run GetE tests
-	for _, tt := range tests["GetE"] {
-		value, err := db.GetE(tt.buckets[0], tt.keys[0])
-		if tt.wantErr {
-			assert.NotNil(t, err, "GetE", tt.name)
+}
+
+func (s *UboltDBTestSuite) TestGetBuckets() {
+	if s.Bucket {
+		return
+	}
+
+	got := s.db.GetBuckets()
+	assert.Equal(s.T(), [][]byte{testbucket}, got, "GetBuckets")
+}
+
+func (s *UboltDBTestSuite) TestGetBucketsE() {
+	if s.Bucket {
+		return
+	}
+
+	got, err := s.db.GetBucketsE()
+	assert.Nil(s.T(), err, "GetBucketsE")
+	assert.Equal(s.T(), [][]byte{testbucket}, got, "GetBucketsE")
+}
+
+func (s *UboltDBTestSuite) TestDelete() {
+	tests := []struct {
+		name    string
+		bucket  []byte
+		key     []byte
+		wantErr bool
+	}{
+		{"Delete - missing bucket", missing, []byte("key2"), true},
+		{"Delete - missing key", testbucket, missing, false},
+		{"Delete - valid key", testbucket, testkey, false},
+	}
+
+	for _, tt := range tests {
+		var err error
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
+		}
+
+		if s.Bucket {
+			err = s.bdb.Delete(tt.key)
 		} else {
-			assert.Nil(t, err, tt.name)
-			assert.Equal(t, tt.value, value, "GetE", tt.name)
+			err = s.db.Delete(tt.bucket, tt.key)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err, tt.name)
+		} else {
+			assert.Nil(s.T(), err, tt.name)
 		}
 	}
 
-	// run Delete tests
-	for _, tt := range tests["Delete"] {
-		err := db.Delete(tt.buckets[0], tt.keys[0])
+}
+
+func (s *UboltDBTestSuite) TestDeleteBucket() {
+	if s.Bucket {
+		return
+	}
+
+	tests := []struct {
+		name    string
+		bucket  []byte
+		wantErr bool
+	}{
+		{"DeleteBucket - missing bucket", missing, true},
+		{"DeleteBucket - valid bucket", testbucket, false},
+	}
+
+	for _, tt := range tests {
+		err := s.db.DeleteBucket(tt.bucket)
+
 		if tt.wantErr {
-			assert.NotNil(t, err, "Delete", tt.name)
+			assert.NotNil(s.T(), err, tt.name)
 		} else {
-			assert.Nil(t, err, "Delete", tt.name)
+			assert.Nil(s.T(), err, tt.name)
 		}
 	}
 
-	// run GetKeys tests
-	for _, tt := range tests["GetKeys"] {
-		keys := db.GetKeys(tt.buckets[0])
-		if tt.wantErr {
-			assert.Nil(t, keys, "GetKeys", tt.name)
-		} else {
-			assert.Equal(t, tt.keys, keys, "GetKeys", tt.name)
-		}
-	}
+}
 
-	// run GetKeysE tests
-	for _, tt := range tests["GetKeysE"] {
-		keys, err := db.GetKeysE(tt.buckets[0])
-		if tt.wantErr {
-			assert.NotNil(t, err, "GetKeysE", tt.name)
-		} else {
-			assert.Nil(t, err, "GetKeysE", tt.name)
-			assert.Equal(t, tt.keys, keys, "GetKeysE", tt.name)
-		}
-	}
-
-	// run GetBuckets tests
-	for _, tt := range tests["GetBuckets"] {
-		buckets := db.GetBuckets()
-		if tt.wantErr {
-			assert.Nil(t, err, "GetBuckets", tt.name)
-		} else {
-			assert.Equal(t, tt.buckets, buckets, "GetBuckets", tt.name)
-		}
-	}
-
+func (s *UboltDBTestSuite) TestScan() {
 	// run Scan tets
 	got := make([]string, 0)
 	scantests := []struct {
@@ -185,7 +373,7 @@ func TestDB(t *testing.T) {
 		},
 		{
 			name:   "missing bucket",
-			bucket: []byte("missing"),
+			bucket: missing,
 			prefix: []byte("key"),
 			fn: func(k, v []byte) error {
 				return nil
@@ -195,7 +383,7 @@ func TestDB(t *testing.T) {
 		{
 			name:   "missing prefix",
 			bucket: testbucket,
-			prefix: []byte("missing"),
+			prefix: missing,
 			fn: func(k, v []byte) error {
 				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
 				return nil
@@ -206,16 +394,31 @@ func TestDB(t *testing.T) {
 	}
 
 	for _, tt := range scantests {
+		var err error
+
+		// skip test if this is a bucket only test looking for a missing bucket
+		if s.Bucket && bytes.Equal(tt.bucket, missing) {
+			continue
+		}
+
 		got = make([]string, 0)
-		err := db.Scan(tt.bucket, tt.prefix, tt.fn)
-		if tt.wantErr {
-			assert.NotNil(t, err)
+
+		if s.Bucket {
+			err = s.bdb.Scan(tt.prefix, tt.fn)
 		} else {
-			assert.Nil(t, err)
-			assert.Equal(t, tt.want, strings.Join(got, ":"), tt.name)
+			err = s.db.Scan(tt.bucket, tt.prefix, tt.fn)
+		}
+
+		if tt.wantErr {
+			assert.NotNil(s.T(), err)
+		} else {
+			assert.Nil(s.T(), err)
+			assert.Equal(s.T(), tt.want, strings.Join(got, ":"), tt.name)
 		}
 	}
+}
 
+func (s *UboltDBTestSuite) TestEncode() {
 	// run Encode/Decode tests
 	type enctest struct {
 		Name   string
@@ -241,274 +444,153 @@ func TestDB(t *testing.T) {
 			// start with non-zero value
 			var got = string("somevalue")
 
-			err = db.Encode(tt.bucket, tt.key, tt.value.(string))
-			if tt.wantErr {
-				assert.NotNil(t, err, tt.name)
+			if s.Bucket {
+				err = s.bdb.Encode(tt.key, tt.value.(string))
 			} else {
-				assert.Nil(t, err, tt.name)
-				err = db.Decode(tt.bucket, tt.key, &got)
-				if tt.wantErr {
-					assert.NotNil(t, err, tt.name)
+				err = s.db.Encode(tt.bucket, tt.key, tt.value.(string))
+			}
+			if tt.wantErr {
+				assert.NotNil(s.T(), err, tt.name)
+			} else {
+				assert.Nil(s.T(), err, tt.name)
+				if s.Bucket {
+					err = s.bdb.Decode(tt.key, &got)
 				} else {
-					assert.Nil(t, err, tt.name)
-					assert.Equal(t, tt.value.(string), got, tt.name)
+					err = s.db.Decode(tt.bucket, tt.key, &got)
+				}
+				if tt.wantErr {
+					assert.NotNil(s.T(), err, tt.name)
+				} else {
+					assert.Nil(s.T(), err, tt.name)
+					assert.Equal(s.T(), tt.value.(string), got, tt.name)
 				}
 			}
 		case int:
 			// start with non-zero value
 			var got = int(1000)
 
-			err = db.Encode(tt.bucket, tt.key, tt.value.(int))
-			if tt.wantErr {
-				assert.NotNil(t, err, tt.name)
+			if s.Bucket {
+				err = s.bdb.Encode(tt.key, tt.value.(int))
 			} else {
-				assert.Nil(t, err, tt.name)
-				err = db.Decode(tt.bucket, tt.key, &got)
-				if tt.wantErr {
-					assert.NotNil(t, err, tt.name)
+				err = s.db.Encode(tt.bucket, tt.key, tt.value.(int))
+			}
+			if tt.wantErr {
+				assert.NotNil(s.T(), err, tt.name)
+			} else {
+				assert.Nil(s.T(), err, tt.name)
+				if s.Bucket {
+					err = s.bdb.Decode(tt.key, &got)
 				} else {
-					assert.Nil(t, err, tt.name)
-					assert.Equal(t, tt.value.(int), got, tt.name)
+					err = s.db.Decode(tt.bucket, tt.key, &got)
+				}
+				if tt.wantErr {
+					assert.NotNil(s.T(), err, tt.name)
+				} else {
+					assert.Nil(s.T(), err, tt.name)
+					assert.Equal(s.T(), tt.value.(int), got, tt.name)
 				}
 			}
 		case enctest:
 			// start with non-zero value
 			var got = enctest{"somename", 100}
 
-			err = db.Encode(tt.bucket, tt.key, tt.value.(enctest))
-			if tt.wantErr {
-				assert.NotNil(t, err, tt.name)
+			if s.Bucket {
+				err = s.bdb.Encode(tt.key, tt.value.(enctest))
 			} else {
-				assert.Nil(t, err, tt.name)
-				err = db.Decode(tt.bucket, tt.key, &got)
-				if tt.wantErr {
-					assert.NotNil(t, err, tt.name)
+				err = s.db.Encode(tt.bucket, tt.key, tt.value.(enctest))
+			}
+			if tt.wantErr {
+				assert.NotNil(s.T(), err, tt.name)
+			} else {
+				assert.Nil(s.T(), err, tt.name)
+				if s.Bucket {
+					err = s.bdb.Decode(tt.key, &got)
 				} else {
-					assert.Nil(t, err, tt.name)
-					assert.Equal(t, tt.value.(enctest), got, tt.name)
+					err = s.db.Decode(tt.bucket, tt.key, &got)
+				}
+				if tt.wantErr {
+					assert.NotNil(s.T(), err, tt.name)
+				} else {
+					assert.Nil(s.T(), err, tt.name)
+					assert.Equal(s.T(), tt.value.(enctest), got, tt.name)
 				}
 			}
 		}
 		if tt.wantErr {
-			assert.NotNil(t, err, "DeleteBucket", tt.name)
+			assert.NotNil(s.T(), err, "Encode", tt.name)
 		} else {
-			assert.Nil(t, err, "DeleteBucket", tt.name)
+			assert.Nil(s.T(), err, "Encode", tt.name)
 		}
 	}
-
-	// run DeleteBucket tests
-	for _, tt := range tests["DeleteBucket"] {
-		err := db.DeleteBucket(tt.buckets[0])
-		if tt.wantErr {
-			assert.NotNil(t, err, "DeleteBucket", tt.name)
-		} else {
-			assert.Nil(t, err, "DeleteBucket", tt.name)
-		}
-	}
-
 }
 
-func TestBDB(t *testing.T) {
-	tests := map[string][]struct {
-		name    string
-		keys    [][]byte
-		value   []byte
-		wantErr bool
-	}{
-		"Put": {
-			{"simple put key1", [][]byte{[]byte("key1")}, []byte("value1"), false},
-			{"simple put key2", [][]byte{[]byte("key2")}, []byte("value2"), false},
-			{"auto-increment key", nil, []byte("value2"), false},
-		},
-		"Get": {
-			{"missing key", [][]byte{[]byte("missing")}, nil, true},
-			{"valid key", [][]byte{[]byte("key1")}, []byte("value1"), false},
-		},
-		"GetE": {
-			{"missing key", [][]byte{[]byte("missing")}, nil, true},
-			{"valid key", [][]byte{[]byte("key1")}, []byte("value1"), false},
-		},
-		"Delete": {
-			{"missing key", [][]byte{[]byte("missing")}, nil, false},
-			{"valid key", [][]byte{[]byte("key2")}, nil, false},
-		},
-		"GetKeys": {
-			{"valid bucket", [][]byte{itob(uint64(1)), []byte("key1")}, nil, false},
-		},
-		"GetKeysE": {
-			{"valid bucket", [][]byte{itob(uint64(1)), []byte("key1")}, nil, false},
-		},
+func (s *UboltDBTestSuite) TestPing() {
+	var err error
+
+	if s.Bucket {
+		err = s.bdb.Ping()
+	} else {
+		err = s.db.Ping()
 	}
 
-	defer os.Remove(testdb)
+	assert.Nil(s.T(), err, "Ping")
+}
 
-	// start with no database
-	_ = os.Remove(testdb)
+func (s *UboltDBTestSuite) TestWriteTo() {
+	if s.Bucket {
+		return
+	}
+	defer os.Remove(testbackup)
 
-	// open db
-	db, err := OpenBucket(testdb, testbucket)
-	assert.Nil(t, err)
+	n, err := func() (int64, error) {
+		f, err := os.Create(testbackup)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+
+		return s.db.WriteTo(f)
+	}()
+
+	assert.Nil(s.T(), err, "WriteTo")
+
+	info, err := os.Stat(testbackup)
+	if err != nil {
+		panic(err)
+	}
+
+	assert.Equal(s.T(), info.Size(), n, "WriteTo - Size check")
+
+	// check data was found in backup
+	db, err := OpenBucket(testbackup, testbucket)
+	if err != nil {
+		panic(err)
+	}
 	defer db.Close()
 
-	// run Put tests
-	for _, tt := range tests["Put"] {
-		var err error
-		if tt.keys == nil {
-			err = db.Put(nil, tt.value)
-		} else {
-			err = db.Put(tt.keys[0], tt.value)
-		}
-		if tt.wantErr {
-			assert.NotNil(t, err, "Put", tt.name)
-		} else {
-			assert.Nil(t, err, "Put", tt.name)
-		}
+	key, err := db.GetE(testkey)
+	if err != nil {
+		panic(err)
 	}
 
-	// run PutV tests
-	for _, tt := range tests["PutV"] {
-		_, err := db.PutV(tt.value)
-		if tt.wantErr {
-			assert.NotNil(t, err, "PutV", tt.name)
-		} else {
-			assert.Nil(t, err, "PutV", tt.name)
+	assert.Equal(s.T(), testvalue, key, "WriteTo - Read from backup")
+}
+
+func (s *UboltDBTestSuite) TearDownTest() {
+	if s.Bucket {
+		if err := s.bdb.Close(); err != nil {
+			panic(err)
+		}
+	} else {
+		if err := s.db.Close(); err != nil {
+			panic(err)
 		}
 	}
 
-	// run Get tests
-	for _, tt := range tests["Get"] {
-		value := db.Get(tt.keys[0])
-		if tt.wantErr {
-			assert.Nil(t, value, "Get", tt.name)
-		} else {
-			assert.Equal(t, tt.value, value, "Get", tt.name)
-		}
-	}
+	_ = os.Remove(testdb)
+}
 
-	// run GetE tests
-	for _, tt := range tests["GetE"] {
-		value, err := db.GetE(tt.keys[0])
-		if tt.wantErr {
-			assert.NotNil(t, err, "GetE", tt.name)
-		} else {
-			assert.Nil(t, err, tt.name)
-			assert.Equal(t, tt.value, value, "GetE", tt.name)
-		}
-	}
-
-	// run Delete tests
-	for _, tt := range tests["Delete"] {
-		err := db.Delete(tt.keys[0])
-		if tt.wantErr {
-			assert.NotNil(t, err, "Delete", tt.name)
-		} else {
-			assert.Nil(t, err, "Delete", tt.name)
-		}
-	}
-
-	// run GetKeys tests
-	for _, tt := range tests["GetKeys"] {
-		keys := db.GetKeys()
-		if tt.wantErr {
-			assert.Nil(t, keys, "GetKeys", tt.name)
-		} else {
-			assert.Equal(t, tt.keys, keys, "GetKeys", tt.name)
-		}
-	}
-
-	// run GetKeys tests
-	for _, tt := range tests["GetKeysE"] {
-		keys, err := db.GetKeysE()
-		if tt.wantErr {
-			assert.NotNil(t, err, "GetKeysE", tt.name)
-		} else {
-			assert.Nil(t, err, "GetKeysE", tt.name)
-			assert.Equal(t, tt.keys, keys, "GetKeysE", tt.name)
-		}
-	}
-
-	// run Scan tets
-	// add an extra keys first
-	_ = db.Put([]byte("keyz"), []byte("value2"))
-	_ = db.Put([]byte("keyzz"), []byte("value3"))
-	_ = db.Put([]byte("prefix1"), []byte("prefixvalue1"))
-	_ = db.Put([]byte("prefix2"), []byte("prefixvalue2"))
-	_ = db.Put([]byte("prefix3"), []byte("prefixvalue3"))
-	got := make([]string, 0)
-
-	scantests := []struct {
-		name    string
-		bucket  []byte
-		prefix  []byte
-		fn      func(k, v []byte) error
-		want    string
-		wantErr bool
-	}{
-		{
-			name:   "basic",
-			bucket: testbucket,
-			prefix: []byte("key"),
-			fn: func(k, v []byte) error {
-				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
-				return nil
-			},
-			want:    "k=key1;v=value1:k=keyz;v=value2:k=keyzz;v=value3",
-			wantErr: false,
-		},
-		{
-			name:   "missing prefix",
-			bucket: testbucket,
-			prefix: []byte("missing"),
-			fn: func(k, v []byte) error {
-				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
-				return nil
-			},
-			want:    "",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range scantests {
-		got = make([]string, 0)
-		err := db.Scan(tt.prefix, tt.fn)
-		if tt.wantErr {
-			assert.NotNil(t, err)
-		} else {
-			assert.Nil(t, err)
-			assert.Equal(t, tt.want, strings.Join(got, ":"), tt.name)
-		}
-	}
-
-	// run ForEach tests
-	// delete a key we don't want first
-	_ = db.Delete(itob(1))
-	foreachtests := []struct {
-		name    string
-		bucket  []byte
-		fn      func(k, v []byte) error
-		want    string
-		wantErr bool
-	}{
-		{
-			name:   "basic",
-			bucket: testbucket,
-			fn: func(k, v []byte) error {
-				got = append(got, fmt.Sprintf("k=%s;v=%s", k, v))
-				return nil
-			},
-			want:    "k=key1;v=value1:k=keyz;v=value2:k=keyzz;v=value3:k=prefix1;v=prefixvalue1:k=prefix2;v=prefixvalue2:k=prefix3;v=prefixvalue3",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range foreachtests {
-		got = make([]string, 0)
-		err := db.ForEach(tt.fn)
-		if tt.wantErr {
-			assert.NotNil(t, err)
-		} else {
-			assert.Nil(t, err)
-			assert.Equal(t, tt.want, strings.Join(got, ":"), tt.name)
-		}
-	}
+func TestUboltDBTestSuite(t *testing.T) {
+	suite.Run(t, new(UboltDBTestSuite))
+	suite.Run(t, &UboltDBTestSuite{Bucket: true})
 }
