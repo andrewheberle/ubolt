@@ -1,7 +1,6 @@
 // Package ubolt wraps various calls from "go.etcd.io/bbolt" to make basic use simpler and quicker.
 //
 // Various calls such as Get, Put etc are automatically wrapped in transactions to ensure consistency.
-//
 package ubolt
 
 import (
@@ -15,12 +14,12 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-type DB struct {
+type Database struct {
 	db *bolt.DB
 }
 
-type BDB struct {
-	db     *DB
+type Bucket struct {
+	db     *Database
 	bucket []byte
 }
 
@@ -61,17 +60,17 @@ func (knf ErrKeyNotFound) Is(target error) bool {
 
 // Open creates and opens a database at the given path. If the file does not exist it will be created automatically.
 // The database is opened with a file-mode of 0600 and a timeout of 5 seconds
-func Open(path string) (*DB, error) {
+func Open(path string) (*Database, error) {
 	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		return nil, err
 	}
 
-	return &DB{db}, nil
+	return &Database{db}, nil
 }
 
 // OpenBucket performs the same process as Open however only one bucket is usable in subsequent calls to Put, Get etc
-func OpenBucket(path string, bucket []byte) (*BDB, error) {
+func OpenBucket(path string, bucket []byte) (*Bucket, error) {
 	db, err := Open(path)
 	if err != nil {
 		return nil, err
@@ -81,32 +80,32 @@ func OpenBucket(path string, bucket []byte) (*BDB, error) {
 		return nil, err
 	}
 
-	return &BDB{db: db, bucket: bucket}, nil
+	return &Bucket{db: db, bucket: bucket}, nil
 }
 
 // Close releases all database resources and closes the file. This call will block while any open transactions complete.
-func (db *DB) Close() error {
+func (db *Database) Close() error {
 	return db.db.Close()
 }
 
 // Close releases all database resources and closes the file. This call will block while any open transactions complete.
-func (bdb *BDB) Close() error {
-	return bdb.db.Close()
+func (b *Bucket) Close() error {
+	return b.db.Close()
 }
 
 // Ping tests the database by attempting to retrieve a list of buckets.
-func (db *DB) Ping() error {
+func (db *Database) Ping() error {
 	_, err := db.GetBucketsE()
 	return err
 }
 
 // Ping tests the database by attempting to retrieve a list of buckets.
-func (bdb *BDB) Ping() error {
-	return bdb.db.Ping()
+func (b *Bucket) Ping() error {
+	return b.db.Ping()
 }
 
 // Put sets the specified key in the chosen bucket to the provided value. This process is wrapped in a read/write transaction.
-func (db *DB) Put(bucket, key, value []byte) error {
+func (db *Database) Put(bucket, key, value []byte) error {
 	if key == nil {
 		_, err := db.PutV(bucket, value)
 
@@ -124,12 +123,12 @@ func (db *DB) Put(bucket, key, value []byte) error {
 }
 
 // Put sets the specified key in the bucket opened to the provided value. This process is wrapped in a read/write transaction.
-func (bdb *BDB) Put(key, value []byte) error {
-	return bdb.db.Put(bdb.bucket, key, value)
+func (b *Bucket) Put(key, value []byte) error {
+	return b.db.Put(b.bucket, key, value)
 }
 
 // PutV sets a key based on an auto-incrementing value for the key.
-func (db *DB) PutV(bucket, value []byte) (key []byte, err error) {
+func (db *Database) PutV(bucket, value []byte) (key []byte, err error) {
 	err = db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
@@ -156,12 +155,12 @@ func (db *DB) PutV(bucket, value []byte) (key []byte, err error) {
 }
 
 // PutV sets a key based on an auto-incrementing value for the key.
-func (bdb *BDB) PutV(value []byte) (key []byte, err error) {
-	return bdb.db.PutV(bdb.bucket, value)
+func (b *Bucket) PutV(value []byte) (key []byte, err error) {
+	return b.db.PutV(b.bucket, value)
 }
 
 // GetE retrieves the specified key from the chosen bucket and returns the value and an error. The returned error is non-nil if a failure occurred, which includes if the bucket or key was not found.
-func (db *DB) GetE(bucket, key []byte) (value []byte, err error) {
+func (db *Database) GetE(bucket, key []byte) (value []byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
@@ -184,24 +183,24 @@ func (db *DB) GetE(bucket, key []byte) (value []byte, err error) {
 }
 
 // GetE retrieves the specified key and returns the value and an error. The returned error is non-nil if a failure occurred, which includes if the key was not found.
-func (bdb *BDB) GetE(key []byte) (value []byte, err error) {
-	return bdb.db.GetE(bdb.bucket, key)
+func (b *Bucket) GetE(key []byte) (value []byte, err error) {
+	return b.db.GetE(b.bucket, key)
 }
 
 // Get retrieves the specified key from the chosen bucket and returns the value. The value returned may be nil which indicates the bucket or key was not found.
-func (db *DB) Get(bucket, key []byte) (value []byte) {
+func (db *Database) Get(bucket, key []byte) (value []byte) {
 	value, _ = db.GetE(bucket, key)
 
 	return value
 }
 
 // Get retrieves the specified key and returns the value. The value returned may be nil which indicates the key was not found.
-func (bdb *BDB) Get(key []byte) (value []byte) {
-	return bdb.db.Get(bdb.bucket, key)
+func (b *Bucket) Get(key []byte) (value []byte) {
+	return b.db.Get(b.bucket, key)
 }
 
 // Encode encodes the provided value using "encoding/gob" then writes the resulting byte slice to the provided key
-func (db *DB) Encode(bucket, key []byte, value interface{}) error {
+func (db *Database) Encode(bucket, key []byte, value interface{}) error {
 	var buf bytes.Buffer
 
 	enc := gob.NewEncoder(&buf)
@@ -213,12 +212,12 @@ func (db *DB) Encode(bucket, key []byte, value interface{}) error {
 }
 
 // Encode encodes the provided value using "encoding/gob" then writes the resulting byte slice to the provided key
-func (bdb *BDB) Encode(key []byte, value interface{}) error {
-	return bdb.db.Encode(bdb.bucket, key, value)
+func (b *Bucket) Encode(key []byte, value interface{}) error {
+	return b.db.Encode(b.bucket, key, value)
 }
 
 // Decode retrieves and decodes a value set by Encode into the provided pointer value.
-func (db *DB) Decode(bucket, key []byte, value interface{}) error {
+func (db *Database) Decode(bucket, key []byte, value interface{}) error {
 	data, err := db.GetE(bucket, key)
 	if err != nil {
 		return err
@@ -231,12 +230,12 @@ func (db *DB) Decode(bucket, key []byte, value interface{}) error {
 }
 
 // Decode retrieves and decodes a value set by Encode into the provided pointer value.
-func (bdb *BDB) Decode(key []byte, value interface{}) error {
-	return bdb.db.Decode(bdb.bucket, key, value)
+func (b *Bucket) Decode(key []byte, value interface{}) error {
+	return b.db.Decode(b.bucket, key, value)
 }
 
 // Delete removes the specified key in the chosen bucket. This process is wrapped in a read/write transaction.
-func (db *DB) Delete(bucket, key []byte) error {
+func (db *Database) Delete(bucket, key []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
@@ -248,19 +247,19 @@ func (db *DB) Delete(bucket, key []byte) error {
 }
 
 // Delete removes the specified key. This process is wrapped in a read/write transaction.
-func (bdb *BDB) Delete(key []byte) error {
-	return bdb.db.Delete(bdb.bucket, key)
+func (b *Bucket) Delete(key []byte) error {
+	return b.db.Delete(b.bucket, key)
 }
 
 // DeleteBucket removes the specified bucket. This also deletes all keys contained in the bucket and any nested buckets.
-func (db *DB) DeleteBucket(bucket []byte) error {
+func (db *Database) DeleteBucket(bucket []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		return tx.DeleteBucket(bucket)
 	})
 }
 
 // DeleteBucket removes the specified bucket. This also deletes all keys contained in the bucket and any nested buckets.
-func (db *DB) CreateBucket(bucket []byte) error {
+func (db *Database) CreateBucket(bucket []byte) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(bucket)
 
@@ -268,7 +267,7 @@ func (db *DB) CreateBucket(bucket []byte) error {
 	})
 }
 
-func (db *DB) GetKeysE(bucket []byte) (keys [][]byte, err error) {
+func (db *Database) GetKeysE(bucket []byte) (keys [][]byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
@@ -288,21 +287,21 @@ func (db *DB) GetKeysE(bucket []byte) (keys [][]byte, err error) {
 	return keys, nil
 }
 
-func (bdb *BDB) GetKeysE() (keys [][]byte, err error) {
-	return bdb.db.GetKeysE(bdb.bucket)
+func (b *Bucket) GetKeysE() (keys [][]byte, err error) {
+	return b.db.GetKeysE(b.bucket)
 }
 
-func (db *DB) GetKeys(bucket []byte) (keys [][]byte) {
+func (db *Database) GetKeys(bucket []byte) (keys [][]byte) {
 	keys, _ = db.GetKeysE(bucket)
 
 	return keys
 }
 
-func (bdb *BDB) GetKeys() (keys [][]byte) {
-	return bdb.db.GetKeys(bdb.bucket)
+func (b *Bucket) GetKeys() (keys [][]byte) {
+	return b.db.GetKeys(b.bucket)
 }
 
-func (db *DB) GetBucketsE() (buckets [][]byte, err error) {
+func (db *Database) GetBucketsE() (buckets [][]byte, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
 			buckets = append(buckets, name)
@@ -315,13 +314,13 @@ func (db *DB) GetBucketsE() (buckets [][]byte, err error) {
 	return buckets, nil
 }
 
-func (db *DB) GetBuckets() (buckets [][]byte) {
+func (db *Database) GetBuckets() (buckets [][]byte) {
 	buckets, _ = db.GetBucketsE()
 
 	return buckets
 }
 
-func (db *DB) ForEach(bucket []byte, fn func(k, v []byte) error) error {
+func (db *Database) ForEach(bucket []byte, fn func(k, v []byte) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 
@@ -333,11 +332,11 @@ func (db *DB) ForEach(bucket []byte, fn func(k, v []byte) error) error {
 	})
 }
 
-func (bdb *BDB) ForEach(fn func(k, v []byte) error) error {
-	return bdb.db.ForEach(bdb.bucket, fn)
+func (b *Bucket) ForEach(fn func(k, v []byte) error) error {
+	return b.db.ForEach(b.bucket, fn)
 }
 
-func (db *DB) Scan(bucket, prefix []byte, fn func(k, v []byte) error) error {
+func (db *Database) Scan(bucket, prefix []byte, fn func(k, v []byte) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 
@@ -357,11 +356,11 @@ func (db *DB) Scan(bucket, prefix []byte, fn func(k, v []byte) error) error {
 	})
 }
 
-func (bdb *BDB) Scan(prefix []byte, fn func(k, v []byte) error) error {
-	return bdb.db.Scan(bdb.bucket, prefix, fn)
+func (b *Bucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
+	return b.db.Scan(b.bucket, prefix, fn)
 }
 
-func (db *DB) WriteTo(w io.Writer) (n int64, err error) {
+func (db *Database) WriteTo(w io.Writer) (n int64, err error) {
 	if err := db.db.View(func(tx *bolt.Tx) error {
 		var err error
 

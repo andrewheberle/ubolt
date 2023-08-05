@@ -27,8 +27,8 @@ type enctest struct {
 
 type UboltDBTestSuite struct {
 	suite.Suite
-	db     *DB
-	bdb    *BDB
+	db     *Database
+	b      *Bucket
 	Bucket bool
 }
 
@@ -47,7 +47,7 @@ func (s *UboltDBTestSuite) SetupTest() {
 			panic(err)
 		}
 
-		s.bdb = db
+		s.b = db
 	} else {
 		// set up db
 		db, err := Open(testdb)
@@ -105,7 +105,7 @@ func (s *UboltDBTestSuite) TestPut() {
 		}
 
 		if s.Bucket {
-			err = s.bdb.Put(tt.key, tt.value)
+			err = s.b.Put(tt.key, tt.value)
 		} else {
 			err = s.db.Put(tt.bucket, tt.key, tt.key)
 		}
@@ -141,7 +141,7 @@ func (s *UboltDBTestSuite) TestPutV() {
 		}
 
 		if s.Bucket {
-			key, err = s.bdb.PutV(tt.value)
+			key, err = s.b.PutV(tt.value)
 		} else {
 			key, err = s.db.PutV(tt.bucket, tt.key)
 		}
@@ -172,7 +172,7 @@ func (s *UboltDBTestSuite) TestGet() {
 		var got []byte
 
 		if s.Bucket {
-			got = s.bdb.Get(tt.key)
+			got = s.b.Get(tt.key)
 		} else {
 			got = s.db.Get(tt.bucket, tt.key)
 		}
@@ -204,7 +204,7 @@ func (s *UboltDBTestSuite) TestGetE() {
 		var err error
 
 		if s.Bucket {
-			got, err = s.bdb.GetE(tt.key)
+			got, err = s.b.GetE(tt.key)
 		} else {
 			got, err = s.db.GetE(tt.bucket, tt.key)
 		}
@@ -240,7 +240,7 @@ func (s *UboltDBTestSuite) TestGetKeys() {
 		}
 
 		if s.Bucket {
-			keys = s.bdb.GetKeys()
+			keys = s.b.GetKeys()
 		} else {
 			keys = s.db.GetKeys(tt.bucket)
 		}
@@ -276,7 +276,7 @@ func (s *UboltDBTestSuite) TestGetKeysE() {
 		}
 
 		if s.Bucket {
-			keys, err = s.bdb.GetKeysE()
+			keys, err = s.b.GetKeysE()
 		} else {
 			keys, err = s.db.GetKeysE(tt.bucket)
 		}
@@ -331,7 +331,7 @@ func (s *UboltDBTestSuite) TestDelete() {
 		}
 
 		if s.Bucket {
-			err = s.bdb.Delete(tt.key)
+			err = s.b.Delete(tt.key)
 		} else {
 			err = s.db.Delete(tt.bucket, tt.key)
 		}
@@ -426,7 +426,7 @@ func (s *UboltDBTestSuite) TestScan() {
 		got = make([]string, 0)
 
 		if s.Bucket {
-			err = s.bdb.Scan(tt.prefix, tt.fn)
+			err = s.b.Scan(tt.prefix, tt.fn)
 		} else {
 			err = s.db.Scan(tt.bucket, tt.prefix, tt.fn)
 		}
@@ -474,7 +474,7 @@ func (s *UboltDBTestSuite) TestForEach() {
 
 	// put additional value for test
 	if s.Bucket {
-		if err := s.bdb.Put([]byte("key2"), []byte("value2")); err != nil {
+		if err := s.b.Put([]byte("key2"), []byte("value2")); err != nil {
 			panic(err)
 		}
 	} else {
@@ -495,7 +495,7 @@ func (s *UboltDBTestSuite) TestForEach() {
 
 		// run test
 		if s.Bucket {
-			err = s.bdb.ForEach(tt.fn)
+			err = s.b.ForEach(tt.fn)
 		} else {
 			err = s.db.ForEach(tt.bucket, tt.fn)
 		}
@@ -546,7 +546,7 @@ func (s *UboltDBTestSuite) TestPing() {
 	var err error
 
 	if s.Bucket {
-		err = s.bdb.Ping()
+		err = s.b.Ping()
 	} else {
 		err = s.db.Ping()
 	}
@@ -596,7 +596,7 @@ func (s *UboltDBTestSuite) TestWriteTo() {
 
 func (s *UboltDBTestSuite) TearDownTest() {
 	if s.Bucket {
-		if err := s.bdb.Close(); err != nil {
+		if err := s.b.Close(); err != nil {
 			panic(err)
 		}
 	} else {
@@ -618,7 +618,7 @@ func (s *UboltDBTestSuite) stringencode(name string, bucket []byte, key []byte, 
 	var got = string("somevalue")
 
 	if s.Bucket {
-		err = s.bdb.Encode(key, value)
+		err = s.b.Encode(key, value)
 	} else {
 		err = s.db.Encode(bucket, key, value)
 	}
@@ -627,7 +627,7 @@ func (s *UboltDBTestSuite) stringencode(name string, bucket []byte, key []byte, 
 	} else {
 		assert.Nil(s.T(), err, name)
 		if s.Bucket {
-			err = s.bdb.Decode(key, &got)
+			err = s.b.Decode(key, &got)
 		} else {
 			err = s.db.Decode(bucket, key, &got)
 		}
@@ -645,7 +645,7 @@ func (s *UboltDBTestSuite) intencode(name string, bucket []byte, key []byte, val
 	var got = int(1000)
 
 	if s.Bucket {
-		err = s.bdb.Encode(key, value)
+		err = s.b.Encode(key, value)
 	} else {
 		err = s.db.Encode(bucket, key, value)
 	}
@@ -654,7 +654,7 @@ func (s *UboltDBTestSuite) intencode(name string, bucket []byte, key []byte, val
 	} else {
 		assert.Nil(s.T(), err, name)
 		if s.Bucket {
-			err = s.bdb.Decode(key, &got)
+			err = s.b.Decode(key, &got)
 		} else {
 			err = s.db.Decode(bucket, key, &got)
 		}
@@ -672,7 +672,7 @@ func (s *UboltDBTestSuite) structencode(name string, bucket []byte, key []byte, 
 	var got = enctest{"somename", 100}
 
 	if s.Bucket {
-		err = s.bdb.Encode(key, value)
+		err = s.b.Encode(key, value)
 	} else {
 		err = s.db.Encode(bucket, key, value)
 	}
@@ -681,7 +681,7 @@ func (s *UboltDBTestSuite) structencode(name string, bucket []byte, key []byte, 
 	} else {
 		assert.Nil(s.T(), err, name)
 		if s.Bucket {
-			err = s.bdb.Decode(key, &got)
+			err = s.b.Decode(key, &got)
 		} else {
 			err = s.db.Decode(bucket, key, &got)
 		}
