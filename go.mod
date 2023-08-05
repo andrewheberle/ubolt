@@ -1,4 +1,4 @@
-module gitlab.com/andrewheberle/ubolt
+module github.com/andrewheberle/ubolt
 
 go 1.16
 
