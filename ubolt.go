@@ -11,11 +11,6 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-type Bucket struct {
-	db     *Database
-	bucket []byte
-}
-
 // ErrBucketNotFound is returned when the bucket requested was not found.
 type ErrBucketNotFound struct {
 	bucket []byte

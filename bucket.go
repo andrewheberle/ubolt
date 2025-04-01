@@ -1,5 +1,10 @@
 package ubolt
 
+type Bucket struct {
+	db     *Database
+	bucket []byte
+}
+
 // Close releases all database resources and closes the file. This call will block while any open transactions complete.
 func (b *Bucket) Close() error {
 	return b.db.Close()
