@@ -7,14 +7,20 @@ import (
 
 type Option func(*Database)
 
-func WithOpenFile(fn func(string, int, os.FileMode) (*os.File, error)) Option {
+func WithOpenFile(openFile func(string, int, os.FileMode) (*os.File, error)) Option {
 	return func(d *Database) {
-		d.openFile = fn
+		d.openFile = openFile
 	}
 }
 
-func WithTimeout(dur time.Duration) Option {
+func WithTimeout(timeout time.Duration) Option {
 	return func(d *Database) {
-		d.timeout = dur
+		d.timeout = timeout
+	}
+}
+
+func WithMode(mode os.FileMode) Option {
+	return func(d *Database) {
+		d.mode = mode
 	}
 }

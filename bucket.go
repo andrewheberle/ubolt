@@ -1,8 +1,15 @@
 package ubolt
 
+import bolt "go.etcd.io/bbolt"
+
 type Bucket struct {
 	db     *Database
 	bucket []byte
+}
+
+// BoltDB provides access to the underlying bbolt.DB if lower level access is required
+func (b *Bucket) BoltDB() *bolt.DB {
+	return b.db.BoltDB()
 }
 
 // Close releases all database resources and closes the file. This call will block while any open transactions complete.

@@ -16,6 +16,12 @@ type Database struct {
 	// options
 	openFile func(string, int, os.FileMode) (*os.File, error)
 	timeout  time.Duration
+	mode     os.FileMode
+}
+
+// BoltDB provides access to the underlying bbolt.DB if lower level access is required
+func (db *Database) BoltDB() *bolt.DB {
+	return db.db
 }
 
 // Close releases all database resources and closes the file. This call will block while any open transactions complete.
