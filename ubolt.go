@@ -48,18 +48,31 @@ func (e ErrKeyNotFound) Is(target error) bool {
 
 // Open creates and opens a database at the given path. If the file does not exist it will be created automatically.
 // The database is opened with a file-mode of 0600 and a timeout of 5 seconds
-func Open(path string) (*Database, error) {
-	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 5 * time.Second})
+func Open(path string, opts ...Option) (*Database, error) {
+	d := new(Database)
+
+	// defaults
+	d.timeout = 5 * time.Second
+
+	// apply options
+	for _, o := range opts {
+		o(d)
+	}
+
+	// open database
+	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: d.timeout, OpenFile: d.openFile})
 	if err != nil {
 		return nil, err
 	}
 
-	return &Database{db}, nil
+	d.db = db
+
+	return d, nil
 }
 
 // OpenBucket performs the same process as Open however all operations are performed on the specified bucket
-func OpenBucket(path string, bucket []byte) (*Bucket, error) {
-	db, err := Open(path)
+func OpenBucket(path string, bucket []byte, opts ...Option) (*Bucket, error) {
+	db, err := Open(path, opts...)
 	if err != nil {
 		return nil, err
 	}

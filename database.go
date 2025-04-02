@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"encoding/gob"
 	"io"
+	"os"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
 
 type Database struct {
 	db *bolt.DB
+
+	// options
+	openFile func(string, int, os.FileMode) (*os.File, error)
+	timeout  time.Duration
 }
 
 // Close releases all database resources and closes the file. This call will block while any open transactions complete.
