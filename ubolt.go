@@ -10,16 +10,22 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-// Open creates and opens a database at the given path. If the file does not exist it will be created automatically.
+const (
+	DefaultTimeout = 5 * time.Second
+	DefaultMode    = 0600
+)
+
+// Open creates and opens a database at the given path. If the file does not exist it will be created automatically
+// with a file-mode of DefaultMode, or the provided WithMode Option.
 //
-// The database is opened with a file-mode of 0600 and a timeout of 5 seconds by default, howevber this can be overridden
-// by passing Options to Open
+// The default timeout to obtain a lock on the database is based on DefaultTimeout, howevber this can be
+// overridden by passing the WithTimeout Option to Open.
 func Open(path string, opts ...Option) (*Database, error) {
 	d := new(Database)
 
 	// defaults
-	d.timeout = 5 * time.Second
-	d.mode = 0600
+	d.timeout = DefaultTimeout
+	d.mode = DefaultMode
 
 	// apply options
 	for _, o := range opts {
