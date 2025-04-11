@@ -4,6 +4,7 @@
 [![Godoc](https://img.shields.io/badge/go-documentation-blue.svg?style=flat)](https://godoc.org/github.com/andrewheberle/ubolt)
 [![tag](https://img.shields.io/github/v/tag/andrewheberle/ubolt)](https://github.com/andrewheberle/ubolt/-/tags)
 [![LICENSE](https://img.shields.io/badge/license-MIT-blue)](https://github.com/andrewheberle/ubolt/-/blob/main/LICENSE)
+[![codecov](https://codecov.io/gh/andrewheberle/ubolt/graph/badge.svg?token=62CL49FG06)](https://codecov.io/gh/andrewheberle/ubolt)
 
 ubolt is a convenience wrapper around various [github.com/etcd-io/bbolt](https://github.com/etcd-io/bbolt) calls.
 
